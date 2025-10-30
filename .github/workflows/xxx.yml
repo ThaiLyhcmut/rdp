@@ -26,23 +26,24 @@ jobs:
           # Generate secure random password
           PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-20)
 
-          # Create user
-          sudo useradd -m -s /bin/bash runner
-          echo "runner:$PASSWORD" | sudo chpasswd
+          # Create user (use 'ghuser' instead of 'runner' to avoid conflict)
+          sudo useradd -m -s /bin/bash ghuser
+          echo "ghuser:$PASSWORD" | sudo chpasswd
 
           # Add to sudo group
-          sudo usermod -aG sudo runner
+          sudo usermod -aG sudo ghuser
 
           # Save credentials to environment
           echo "SSH_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+          echo "SSH_USER=ghuser" >> $GITHUB_ENV
 
           # Verify user creation
-          if ! id "runner" &>/dev/null; then
+          if ! id "ghuser" &>/dev/null; then
               echo "User creation failed"
               exit 1
           fi
 
-          echo "User 'runner' created successfully"
+          echo "User 'ghuser' created successfully"
 
       - name: Install Tailscale
         run: |
@@ -91,11 +92,11 @@ jobs:
         run: |
           echo ""
           echo "=== SSH ACCESS ==="
-          echo "Command: ssh runner@$TAILSCALE_IP"
+          echo "Command: ssh ghuser@$TAILSCALE_IP"
           echo "Password: $SSH_PASSWORD"
           echo ""
           echo "Or one-liner:"
-          echo "sshpass -p '$SSH_PASSWORD' ssh runner@$TAILSCALE_IP"
+          echo "sshpass -p '$SSH_PASSWORD' ssh ghuser@$TAILSCALE_IP"
           echo "=================="
           echo ""
 
