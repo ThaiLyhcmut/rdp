@@ -1,49 +1,48 @@
-name: RDP-Linux
-curl -fsSL https://tailscale.com/install.sh | sh
+name: SSH-Linux
+
 on:
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
+  secure-ssh:
     runs-on: ubuntu-latest
     timeout-minutes: 3600
 
     steps:
-      - name: Install XRDP and Desktop Environment
+      - name: Setup SSH Service
         run: |
           sudo apt-get update
-          sudo apt-get install -y xrdp xfce4 xfce4-goodies tightvncserver
-          sudo systemctl enable xrdp
-          sudo systemctl start xrdp
+          sudo apt-get install -y openssh-server
+          sudo systemctl enable ssh
+          sudo systemctl start ssh
 
-          # Configure XRDP to use Xfce
-          echo "xfce4-session" | sudo tee /etc/xrdp/startwm.sh
-          sudo chmod +x /etc/xrdp/startwm.sh
+          # Configure SSH for password authentication
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo systemctl restart ssh
 
-          # Allow RDP through firewall
-          sudo ufw allow 3389/tcp || true
-
-      - name: Create RDP User with Secure Password
+      - name: Create SSH User with Secure Password
         run: |
           # Generate secure random password
           PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-20)
 
           # Create user
-          sudo useradd -m -s /bin/bash rdp
-          echo "rdp:$PASSWORD" | sudo chpasswd
+          sudo useradd -m -s /bin/bash runner
+          echo "runner:$PASSWORD" | sudo chpasswd
 
-          # Add to sudo group (optional)
-          sudo usermod -aG sudo rdp
+          # Add to sudo group
+          sudo usermod -aG sudo runner
 
           # Save credentials to environment
-          echo "RDP_CREDS=User: rdp | Password: $PASSWORD" >> $GITHUB_ENV
-          echo "RDP_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+          echo "SSH_PASSWORD=$PASSWORD" >> $GITHUB_ENV
 
           # Verify user creation
-          if ! id "rdp" &>/dev/null; then
+          if ! id "runner" &>/dev/null; then
               echo "User creation failed"
               exit 1
           fi
+
+          echo "User 'runner' created successfully"
 
       - name: Install Tailscale
         run: |
@@ -51,7 +50,7 @@ jobs:
 
       - name: Establish Tailscale Connection
         run: |
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-linux-${{ github.run_id }}
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-ssh-${{ github.run_id }}
 
           # Wait for Tailscale to assign an IP
           for i in {1..10}; do
@@ -69,37 +68,39 @@ jobs:
               exit 1
           fi
 
-      - name: Verify RDP Accessibility
+      - name: Verify SSH Accessibility
         run: |
           echo "Tailscale IP: $TAILSCALE_IP"
 
-          # Check if XRDP is running
-          if ! sudo systemctl is-active --quiet xrdp; then
-              echo "XRDP service is not running"
-              sudo systemctl status xrdp
+          # Check if SSH is running
+          if ! sudo systemctl is-active --quiet ssh; then
+              echo "SSH service is not running"
+              sudo systemctl status ssh
               exit 1
           fi
 
-          # Check if port 3389 is listening
-          if ! sudo netstat -tuln | grep ':3389'; then
-              echo "Port 3389 is not listening"
+          # Check if port 22 is listening
+          if ! sudo netstat -tuln | grep ':22'; then
+              echo "Port 22 is not listening"
               exit 1
           fi
 
-          echo "RDP service is running and listening on port 3389"
+          echo "SSH service is running and listening on port 22"
 
       - name: Maintain Connection
         run: |
           echo ""
-          echo "=== RDP ACCESS ==="
-          echo "Address: $TAILSCALE_IP"
-          echo "Username: rdp"
-          echo "Password: $RDP_PASSWORD"
+          echo "=== SSH ACCESS ==="
+          echo "Command: ssh runner@$TAILSCALE_IP"
+          echo "Password: $SSH_PASSWORD"
+          echo ""
+          echo "Or one-liner:"
+          echo "sshpass -p '$SSH_PASSWORD' ssh runner@$TAILSCALE_IP"
           echo "=================="
           echo ""
 
           # Keep runner active indefinitely (or until manually cancelled)
           while true; do
-              echo "[$(date)] RDP Active - Use workflow cancel button to terminate"
+              echo "[$(date)] SSH Active - Use workflow cancel button to terminate"
               sleep 300
           done
