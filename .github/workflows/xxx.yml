@@ -1,5 +1,5 @@
 name: RDP-Linux
-
+curl -fsSL https://tailscale.com/install.sh | sh
 on:
   workflow_dispatch:
 
